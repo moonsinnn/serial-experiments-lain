@@ -1,3 +1,12 @@
+# ignore ALL .log files
+*.log
+temp/                                                                 
+app.py
+token.txt
+*.txt
+*.go
+*.mp4
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
