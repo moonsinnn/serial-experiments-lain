@@ -118,7 +118,7 @@ def upload_frames(start_frame, loop_count, album_id=None, dry_run=False, multi_p
     max_photos_per_post = 4  # Facebook allows max 4 photos per post
 
     for i in tqdm(range(start_frame, start_frame + loop_count), desc="Uploading frames"):
-        time.sleep(4)  # Avoid rate limiting
+        time.sleep(3)  # Avoid rate limiting
         num = f"{i:04}"
         image_source = f"./frame/frame_{num}.jpg"
 
