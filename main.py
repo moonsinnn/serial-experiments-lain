@@ -40,7 +40,7 @@ def setup_argument_parser():
     return parser.parse_args()
 
 # Upload a single photo and publish it immediately
-def upload_single_photo_published(image_source, caption, album_id=None):
+def upload_single_photo_published(image_source, caption, album_id=None, retries=3):
     url = "https://graph.facebook.com/v22.0/me/photos" if not album_id else f"https://graph.facebook.com/v22.0/{album_id}/photos"
     payload = {
         'access_token': ACCESS_TOKEN,
@@ -48,23 +48,27 @@ def upload_single_photo_published(image_source, caption, album_id=None):
         'published': 'true',  # Publish immediately
     }
 
-    try:
-        with open(image_source, 'rb') as image_file:
-            files = {'source': (image_source, image_file)}
-            response = requests.post(url, files=files, data=payload)
+    for attempt in range(retries):
+        try:
+            with open(image_source, 'rb') as image_file:
+                files = {'source': (image_source, image_file)}
+                response = requests.post(url, files=files, data=payload)
 
-        if response.status_code == 200:
-            tqdm.write(f"{Color.BOLD}{Color.GREEN}Frame uploaded and published successfully{Color.RESET}. Response: {response.json()}")
-            return True
-        else:
-            tqdm.write(f"{Color.BOLD}{Color.RED}Failed to upload and publish frame{Color.RESET}. Status Code: {response.status_code}, Response: {response.json()}")
-            return False
-    except Exception as e:
-        tqdm.write(f"{Color.BOLD}{Color.RED}Error uploading and publishing frame: {e}{Color.RESET}")
-        return False
+            if response.status_code == 200:
+                tqdm.write(f"{Color.BOLD}{Color.GREEN}Frame uploaded and published successfully{Color.RESET}. Response: {response.json()}")
+                return True
+            else:
+                tqdm.write(f"{Color.BOLD}{Color.RED}Attempt {attempt + 1} failed to upload and publish frame{Color.RESET}. Status Code: {response.status_code}, Response: {response.json()}")
+                if attempt == retries - 1:
+                    return False
+        except Exception as e:
+            tqdm.write(f"{Color.BOLD}{Color.RED}Attempt {attempt + 1} error uploading and publishing frame: {e}{Color.RESET}")
+            if attempt == retries - 1:
+                return False
+        time.sleep(2)  # Wait before retrying
 
 # Upload a single photo without publishing it and return its media_fbid
-def upload_single_photo_unpublished(image_source, caption, album_id=None):
+def upload_single_photo_unpublished(image_source, caption, album_id=None, retries=3):
     url = "https://graph.facebook.com/v22.0/me/photos" if not album_id else f"https://graph.facebook.com/v22.0/{album_id}/photos"
     payload = {
         'access_token': ACCESS_TOKEN,
@@ -72,24 +76,28 @@ def upload_single_photo_unpublished(image_source, caption, album_id=None):
         'published': 'false',  # Do not publish, just get media_fbid
     }
 
-    try:
-        with open(image_source, 'rb') as image_file:
-            files = {'source': (image_source, image_file)}
-            response = requests.post(url, files=files, data=payload)
+    for attempt in range(retries):
+        try:
+            with open(image_source, 'rb') as image_file:
+                files = {'source': (image_source, image_file)}
+                response = requests.post(url, files=files, data=payload)
 
-        if response.status_code == 200:
-            media_fbid = response.json().get('id')
-            if not media_fbid:
-                tqdm.write(f"{Color.BOLD}{Color.RED}Failed to get media_fbid{Color.RESET}")
+            if response.status_code == 200:
+                media_fbid = response.json().get('id')
+                if not media_fbid:
+                    tqdm.write(f"{Color.BOLD}{Color.RED}Failed to get media_fbid{Color.RESET}")
+                    return None
+                tqdm.write(f"{Color.BOLD}{Color.GREEN}Frame uploaded successfully (unpublished){Color.RESET}. Media FBID: {media_fbid}")
+                return media_fbid
+            else:
+                tqdm.write(f"{Color.BOLD}{Color.RED}Attempt {attempt + 1} failed to upload frame (unpublished){Color.RESET}. Status Code: {response.status_code}, Response: {response.json()}")
+                if attempt == retries - 1:
+                    return None
+        except Exception as e:
+            tqdm.write(f"{Color.BOLD}{Color.RED}Attempt {attempt + 1} error uploading frame (unpublished): {e}{Color.RESET}")
+            if attempt == retries - 1:
                 return None
-            tqdm.write(f"{Color.BOLD}{Color.GREEN}Frame uploaded successfully (unpublished){Color.RESET}. Media FBID: {media_fbid}")
-            return media_fbid
-        else:
-            tqdm.write(f"{Color.BOLD}{Color.RED}Failed to upload frame (unpublished){Color.RESET}. Status Code: {response.status_code}, Response: {response.json()}")
-            return None
-    except Exception as e:
-        tqdm.write(f"{Color.BOLD}{Color.RED}Error uploading frame (unpublished): {e}{Color.RESET}")
-        return None
+        time.sleep(2)  # Wait before retrying
 
 # Upload multiple photos in a single post
 def upload_multiple_photos(media_fbids, caption):
@@ -116,15 +124,18 @@ def upload_multiple_photos(media_fbids, caption):
 def upload_frames(start_frame, loop_count, album_id=None, dry_run=False, multi_photo=None):
     media_fbids = []
     max_photos_per_post = 4  # Facebook allows max 4 photos per post
+    success_count = 0
+    fail_count = 0
 
     for i in tqdm(range(start_frame, start_frame + loop_count), desc="Uploading frames"):
-        time.sleep(3)  # Avoid rate limiting
+        time.sleep(2)  # Reduce sleep time to 2 seconds
         num = f"{i:04}"
         image_source = f"./frame/frame_{num}.jpg"
 
         # Check if the frame exists
         if not os.path.exists(image_source):
             tqdm.write(f"{Color.BOLD}{Color.RED}Frame {num} not found{Color.RESET}")
+            fail_count += 1
             continue
 
         caption = CAPTION_TEMPLATE.format(num=num)
@@ -132,6 +143,7 @@ def upload_frames(start_frame, loop_count, album_id=None, dry_run=False, multi_p
         # Dry run mode
         if dry_run:
             tqdm.write(f"{Color.BOLD}{Color.CYAN}Dry Run: Frame {num} would be uploaded{Color.RESET}")
+            success_count += 1
             continue
 
         # Upload single photo (published or unpublished)
@@ -141,6 +153,7 @@ def upload_frames(start_frame, loop_count, album_id=None, dry_run=False, multi_p
             if media_fbid:
                 media_fbids.append(media_fbid)
                 os.remove(image_source)
+                success_count += 1
 
             # If enough photos are collected, create a multi-photo post
             if len(media_fbids) >= multi_photo:
@@ -150,10 +163,18 @@ def upload_frames(start_frame, loop_count, album_id=None, dry_run=False, multi_p
             # Upload and publish immediately
             if upload_single_photo_published(image_source, caption, album_id):
                 os.remove(image_source)
+                success_count += 1
+            else:
+                fail_count += 1
 
     # Upload any remaining photos in multi-photo mode
     if multi_photo and media_fbids:
         upload_multiple_photos(media_fbids[:max_photos_per_post], f"Uploaded {len(media_fbids)} frames")
+
+    # Print summary
+    tqdm.write(f"{Color.BOLD}Upload Summary:{Color.RESET}")
+    tqdm.write(f"{Color.GREEN}Successfully uploaded: {success_count} frames{Color.RESET}")
+    tqdm.write(f"{Color.RED}Failed to upload: {fail_count} frames{Color.RESET}")
 
 # Entry point of the script
 if __name__ == "__main__":
