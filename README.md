@@ -11,7 +11,6 @@ This Python script is designed to upload frames (images) to Facebook using the G
    - `tqdm`
    - `urllib3`
    - `argparse`
-   - `logging`
 3. **Facebook Access Token**: The Facebook access token must be stored in a `config.py` file as the `ACCESS_TOKEN` variable.
 4. **Caption Template**: The caption template for each frame must be stored in the `config.py` file as the `CAPTION_TEMPLATE` variable.
 
