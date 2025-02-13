@@ -130,7 +130,7 @@ def upload_frames(start_frame, loop_count, album_id=None, dry_run=False, multi_p
     for i in tqdm(range(start_frame, start_frame + loop_count), desc="Uploading frames"):
         time.sleep(2)  # Reduce sleep time to 2 seconds
         num = f"{i:04}"
-        image_source = f"./frame/frame_{num}.jpg"
+        image_source = f"./frames/frame_{num}.jpg"
 
         # Check if the frame exists
         if not os.path.exists(image_source):
