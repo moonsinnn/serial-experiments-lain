@@ -45,6 +45,7 @@ def create_frames_from_video(
         'ffmpeg',
         '-i', video_path,               # Input video file
         '-vf', f'fps={frame_rate}',     # Frame rate filter
+        '-q:v', '3',                    # Quality level (lower is better)
         '-progress', 'pipe:1',          # Enable progress feedback
         output_pattern                  # Output frame naming pattern
     ]
