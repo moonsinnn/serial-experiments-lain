@@ -8,6 +8,7 @@ This Python script is designed to upload frames (images) to Facebook using the G
 1. **Python 3**: Ensure Python 3 is installed.
 2. **Required Libraries**:
    - `requests`
+   - `httpx`
    - `tqdm`
    - `urllib3`
    - `argparse`

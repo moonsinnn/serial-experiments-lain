@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
+"""
+Script untuk mengupload frame ke Facebook menggunakan Graph API.
+Mendukung upload single photo, multiple photos, dan dry-run mode.
+"""
+
 import signal
 import sys
 import os
 import argparse
 import time
-import requests
+import httpx
 import urllib3
 from tqdm import tqdm
 from config import ACCESS_TOKEN, CAPTION_TEMPLATE
@@ -20,6 +25,10 @@ BASE_URL = f"https://graph.facebook.com/{API_VERSION}"
 
 # Color class for terminal output
 class Color:
+    """
+    Class untuk menambahkan warna pada output terminal.
+    """
+
     PURPLE = "\033[95m"
     CYAN = "\033[96m"
     DARKCYAN = "\033[36m"
@@ -32,7 +41,17 @@ class Color:
     RESET = "\033[0m"
     MAGENTA = "\033[35m"
 
+    @staticmethod
+    def apply(color, text):
+        """
+        Mengaplikasikan warna ke teks.
+        """
+        return f"{color}{text}{Color.RESET}"
+
 def setup_argument_parser():
+    """
+    Setup argument parser untuk command-line arguments.
+    """
     parser = argparse.ArgumentParser(description="Upload frames to Facebook.")
     parser.add_argument(
         "--start",
@@ -58,7 +77,10 @@ def setup_argument_parser():
     )
     return parser.parse_args()
 
-def upload_single_photo_published(image_source, caption, album_id=None, retries=3):
+async def upload_single_photo_published(image_source, caption, album_id=None, retries=3):
+    """
+    Upload single photo dan publish secara langsung.
+    """
     url = f"{BASE_URL}/me/photos" if not album_id else f"{BASE_URL}/{album_id}/photos"
     payload = {
         "access_token": ACCESS_TOKEN,
@@ -68,26 +90,41 @@ def upload_single_photo_published(image_source, caption, album_id=None, retries=
 
     for attempt in range(retries):
         try:
-            with open(image_source, "rb") as image_file:
-                files = {"source": (image_source, image_file)}
-                response = requests.post(url, files=files, data=payload, timeout=10)
+            async with httpx.AsyncClient() as client:
+                with open(image_source, "rb") as image_file:
+                    files = {"source": (image_source, image_file)}
+                    response = await client.post(url, data=payload, files=files, timeout=10)
 
-            if response.status_code == 200:
+                if response.status_code == 200:
+                    tqdm.write(
+                        Color.apply(
+                            Color.GREEN,
+                            "Frame uploaded and published successfully. "
+                            f"Response: {response.json()}",
+                        )
+                    )
+                    return True
                 tqdm.write(
-                    f"{Color.BOLD}{Color.GREEN}Frame uploaded and published successfully{Color.RESET}. Response: {response.json()}"
+                    Color.apply(
+                        Color.RED,
+                        f"Attempt {attempt + 1} failed to upload and publish frame. "
+                        f"Status Code: {response.status_code}, Response: {response.json()}",
+                    )
                 )
-                return True
+        except httpx.RequestError as e:
             tqdm.write(
-                f"{Color.BOLD}{Color.RED}Attempt {attempt + 1} failed to upload and publish frame{Color.RESET}. Status Code: {response.status_code}, Response: {response.json()}"
-            )
-        except requests.exceptions.RequestException as e:
-            tqdm.write(
-                f"{Color.BOLD}{Color.RED}Attempt {attempt + 1} error uploading and publishing frame: {e}{Color.RESET}"
+                Color.apply(
+                    Color.RED,
+                    f"Attempt {attempt + 1} error uploading and publishing frame: {e}",
+                )
             )
         time.sleep(2)
     return False
 
-def upload_single_photo_unpublished(image_source, caption, album_id=None, retries=3):
+async def upload_single_photo_unpublished(image_source, caption, album_id=None, retries=3):
+    """
+    Upload single photo tanpa publish dan kembalikan media_fbid.
+    """
     url = f"{BASE_URL}/me/photos" if not album_id else f"{BASE_URL}/{album_id}/photos"
     payload = {
         "access_token": ACCESS_TOKEN,
@@ -97,32 +134,44 @@ def upload_single_photo_unpublished(image_source, caption, album_id=None, retrie
 
     for attempt in range(retries):
         try:
-            with open(image_source, "rb") as image_file:
-                files = {"source": (image_source, image_file)}
-                response = requests.post(url, files=files, data=payload, timeout=10)
+            async with httpx.AsyncClient() as client:
+                with open(image_source, "rb") as image_file:
+                    files = {"source": (image_source, image_file)}
+                    response = await client.post(url, data=payload, files=files, timeout=10)
 
-            if response.status_code == 200:
-                media_fbid = response.json().get("id")
-                if media_fbid:
+                if response.status_code == 200:
+                    media_fbid = response.json().get("id")
+                    if media_fbid:
+                        tqdm.write(
+                            Color.apply(
+                                Color.GREEN,
+                                f"Frame uploaded successfully (unpublished). Media FBID: {media_fbid}",
+                            )
+                        )
+                        return media_fbid
+                    tqdm.write(Color.apply(Color.RED, "Failed to get media_fbid"))
+                else:
                     tqdm.write(
-                        f"{Color.BOLD}{Color.GREEN}Frame uploaded successfully (unpublished){Color.RESET}. Media FBID: {media_fbid}"
+                        Color.apply(
+                            Color.RED,
+                            f"Attempt {attempt + 1} failed to upload frame (unpublished). "
+                            f"Status Code: {response.status_code}, Response: {response.json()}",
+                        )
                     )
-                    return media_fbid
-                tqdm.write(
-                    f"{Color.BOLD}{Color.RED}Failed to get media_fbid{Color.RESET}"
-                )
-            else:
-                tqdm.write(
-                    f"{Color.BOLD}{Color.RED}Attempt {attempt + 1} failed to upload frame (unpublished){Color.RESET}. Status Code: {response.status_code}, Response: {response.json()}"
-                )
-        except requests.exceptions.RequestException as e:
+        except httpx.RequestError as e:
             tqdm.write(
-                f"{Color.BOLD}{Color.RED}Attempt {attempt + 1} error uploading frame (unpublished): {e}{Color.RESET}"
+                Color.apply(
+                    Color.RED,
+                    f"Attempt {attempt + 1} error uploading frame (unpublished): {e}",
+                )
             )
         time.sleep(2)
     return None
 
-def upload_multiple_photos(media_fbids, caption):
+async def upload_multiple_photos(media_fbids, caption):
+    """
+    Upload multiple photos dalam satu post.
+    """
     url = f"{BASE_URL}/me/feed"
     payload = {
         "access_token": ACCESS_TOKEN,
@@ -133,21 +182,30 @@ def upload_multiple_photos(media_fbids, caption):
         payload[f"attached_media[{i}]"] = f'{{"media_fbid":"{media_fbid}"}}'
 
     try:
-        response = requests.post(url, data=payload, timeout=10)
-        if response.status_code == 200:
-            tqdm.write(
-                f"{Color.BOLD}{Color.GREEN}Multiple photos posted successfully{Color.RESET}. Post ID: {response.json().get('id')}"
-            )
-        else:
-            tqdm.write(
-                f"{Color.BOLD}{Color.RED}Failed to post multiple photos{Color.RESET}. Status Code: {response.status_code}, Response: {response.json()}"
-            )
-    except requests.exceptions.RequestException as e:
-        tqdm.write(
-            f"{Color.BOLD}{Color.RED}Error posting multiple photos: {e}{Color.RESET}"
-        )
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, data=payload, timeout=10)
+            if response.status_code == 200:
+                tqdm.write(
+                    Color.apply(
+                        Color.GREEN,
+                        f"Multiple photos posted successfully. Post ID: {response.json().get('id')}",
+                    )
+                )
+            else:
+                tqdm.write(
+                    Color.apply(
+                        Color.RED,
+                        f"Failed to post multiple photos. Status Code: {response.status_code}, "
+                        f"Response: {response.json()}",
+                    )
+                )
+    except httpx.RequestError as e:
+        tqdm.write(Color.apply(Color.RED, f"Error posting multiple photos: {e}"))
 
-def upload_frames(start_frame, loop_count, album_id=None, dry_run=False, multi_photo=None):
+async def upload_frames(start_frame, loop_count, album_id=None, dry_run=False, multi_photo=None):
+    """
+    Fungsi utama untuk mengupload frames.
+    """
     media_fbids = []
     success_count = 0
     fail_count = 0
@@ -158,58 +216,64 @@ def upload_frames(start_frame, loop_count, album_id=None, dry_run=False, multi_p
         image_source = f"./frames/frame_{num}.jpg"
 
         if not os.path.exists(image_source):
-            tqdm.write(f"{Color.BOLD}{Color.RED}Frame {num} not found{Color.RESET}")
+            tqdm.write(Color.apply(Color.RED, f"Frame {num} not found"))
             fail_count += 1
             continue
 
         caption = CAPTION_TEMPLATE.format(num=num)
 
         if dry_run:
-            tqdm.write(
-                f"{Color.BOLD}{Color.CYAN}Dry Run: Frame {num} would be uploaded{Color.RESET}"
-            )
+            tqdm.write(Color.apply(Color.CYAN, f"Dry Run: Frame {num} would be uploaded"))
             success_count += 1
             continue
 
         if multi_photo:
-            media_fbid = upload_single_photo_unpublished(image_source, caption, album_id)
+            media_fbid = await upload_single_photo_unpublished(image_source, caption, album_id)
             if media_fbid:
                 media_fbids.append(media_fbid)
                 os.remove(image_source)
                 success_count += 1
 
             if len(media_fbids) >= multi_photo:
-                upload_multiple_photos(
+                await upload_multiple_photos(
                     media_fbids[:MAX_PHOTOS_PER_POST],
                     f"Uploaded {len(media_fbids)} frames: {caption}",
                 )
                 media_fbids = []
         else:
-            if upload_single_photo_published(image_source, caption, album_id):
+            if await upload_single_photo_published(image_source, caption, album_id):
                 os.remove(image_source)
                 success_count += 1
             else:
                 fail_count += 1
 
     if multi_photo and media_fbids:
-        upload_multiple_photos(
+        await upload_multiple_photos(
             media_fbids[:MAX_PHOTOS_PER_POST], f"Uploaded {len(media_fbids)} frames"
         )
 
-    tqdm.write(f"{Color.BOLD}Upload Summary:{Color.RESET}")
-    tqdm.write(
-        f"{Color.GREEN}Successfully uploaded: {success_count} frames{Color.RESET}"
-    )
-    tqdm.write(f"{Color.RED}Failed to upload: {fail_count} frames{Color.RESET}")
+    tqdm.write(Color.apply(Color.BOLD, "Upload Summary:"))
+    tqdm.write(Color.apply(Color.GREEN, f"Successfully uploaded: {success_count} frames"))
+    tqdm.write(Color.apply(Color.RED, f"Failed to upload: {fail_count} frames"))
 
-if __name__ == "__main__":
+async def main():
+    """
+    Fungsi utama untuk menjalankan script.
+    """
     args = setup_argument_parser()
 
     if args.multi_photo and (args.multi_photo < 1 or args.multi_photo > MAX_PHOTOS_PER_POST):
         tqdm.write(
-            f"{Color.BOLD}{Color.RED}Multi-photo value must be between 1 and {MAX_PHOTOS_PER_POST}{Color.RESET}"
+            Color.apply(
+                Color.RED,
+                f"Multi-photo value must be between 1 and {MAX_PHOTOS_PER_POST}",
+            )
         )
         sys.exit(1)
 
-    upload_frames(args.start, args.loop, args.album, args.dry_run, args.multi_photo)
-    tqdm.write(f"{Color.BOLD}Task Done{Color.RESET}")
+    await upload_frames(args.start, args.loop, args.album, args.dry_run, args.multi_photo)
+    tqdm.write(Color.apply(Color.BOLD, "Task Done"))
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
