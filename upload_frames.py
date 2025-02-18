@@ -48,6 +48,13 @@ class Color:
         """
         return f"{color}{text}{Color.RESET}"
 
+    @staticmethod
+    def bold(text):
+        """
+        Membuat teks menjadi bold.
+        """
+        return f"{Color.BOLD}{text}{Color.RESET}"
+
 def setup_argument_parser():
     """
     Setup argument parser untuk command-line arguments.
@@ -145,7 +152,8 @@ async def upload_single_photo_unpublished(image_source, caption, album_id=None, 
                         tqdm.write(
                             Color.apply(
                                 Color.GREEN,
-                                f"Frame uploaded successfully (unpublished). Media FBID: {media_fbid}",
+                                f"Frame uploaded successfully (unpublished). "
+                                f"Media FBID: {media_fbid}",
                             )
                         )
                         return media_fbid
@@ -188,7 +196,8 @@ async def upload_multiple_photos(media_fbids, caption):
                 tqdm.write(
                     Color.apply(
                         Color.GREEN,
-                        f"Multiple photos posted successfully. Post ID: {response.json().get('id')}",
+                        f"Multiple photos posted successfully. "
+                        f"Post ID: {response.json().get('id')}",
                     )
                 )
             else:
